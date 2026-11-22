@@ -11,7 +11,7 @@
 .
 ├── frontend/                 Vue 3 + Vite + TypeScript 前端
 │   ├── src/views/WorkbenchView.vue|tsx  全部模块共享工作台
-│   ├── src/data/modules.ts              18个业务模块配置
+│   ├── src/data/modules.ts              19个业务模块配置
 │   ├── src/api/              统一请求封装
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
@@ -52,6 +52,7 @@ npm run dev
 | --- | --- | --- | --- |
 | 特征源管理 | `feature_source` | 特征源 | 源编号、源名称、数据表名 |
 | 特征定义 | `feature_define` | 特征定义 | 特征编号、特征名称、特征类型 |
+| 来源映射清单 | `source_mapping` | 来源映射 | 映射编号、目录编码、目标表名 |
 | 特征组管理 | `feature_group` | 特征组 | 组编号、组名称、包含特征 |
 | 数据切片配置 | `data_slice` | 切片配置 | 切片编号、切片名称、数据来源 |
 | 特征计算任务 | `feature_compute` | 计算任务 | 任务编号、关联特征、数据切片 |

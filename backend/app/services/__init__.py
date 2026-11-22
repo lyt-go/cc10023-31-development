@@ -4,6 +4,7 @@ from __future__ import annotations
 from app.services.base import BaseModuleService
 from app.services.feature_source import FeatureSourceService
 from app.services.feature_define import FeatureDefineService
+from app.services.source_mapping import SourceMappingService
 from app.services.feature_group import FeatureGroupService
 from app.services.data_slice import DataSliceService
 from app.services.feature_compute import FeatureComputeService
@@ -24,6 +25,7 @@ from app.services.scenario_label import ScenarioLabelService
 SERVICES: dict[str, BaseModuleService] = {
     "feature_source": FeatureSourceService(),
     "feature_define": FeatureDefineService(),
+    "source_mapping": SourceMappingService(),
     "feature_group": FeatureGroupService(),
     "data_slice": DataSliceService(),
     "feature_compute": FeatureComputeService(),

@@ -115,3 +115,71 @@ class FeatureSourceService(BaseModuleService):
             "保留天数": "90",
             "快照状态": "已完成",
         })
+
+    # ── 来源映射清单：物理表登记、可用特征登记、修订发布 ──
+    def register_physical_table(self, source_id: int, table_name: str,
+                                columns: list[dict[str, Any]]) -> dict[str, Any]:
+        """登记特征源下的物理表列（列类型、取值单位、当前值），供映射对账与计算取值。"""
+        source = store.find(self.MODULE, source_id)
+        if source is None:
+            return {"ok": False, "message": f"特征源 {source_id} 不存在"}
+        rows = store.rows("source_table_data")
+        registered = []
+        for col in columns:
+            field = str(col.get("name") or "").strip()
+            if not field:
+                continue
+            existing = None
+            for row in rows:
+                if row.get("表名") == table_name and row.get("字段") == field:
+                    existing = row
+                    break
+            if existing is None:
+                next_id = max((int(r.get("id", 0)) for r in rows), default=0) + 1
+                existing = {"id": next_id, "表名": table_name, "字段": field}
+                rows.append(existing)
+            existing["列类型"] = str(col.get("type") or "")
+            existing["取值单位"] = str(col.get("unit") or "")
+            existing["当前值"] = col.get("value")
+            registered.append({"表名": table_name, "字段": field,
+                               "列类型": existing["列类型"], "取值单位": existing["取值单位"]})
+        return {"ok": True, "source_id": source_id, "table": table_name, "columns": registered,
+                "message": f"特征源 {source_id} 已登记物理表 {table_name}（{len(registered)} 列）"}
+
+    def register_available_features(self, source_id: int) -> dict[str, Any]:
+        """读取来源映射定义清单，把已发布映射登记为本源可用特征。"""
+        source = store.find(self.MODULE, source_id)
+        if source is None:
+            return {"ok": False, "message": f"特征源 {source_id} 不存在"}
+        published = [
+            row for row in store.rows("source_mapping")
+            if row.get("status") == "已发布"
+        ]
+        available = [
+            {
+                "目录编码": m.get("目录编码"),
+                "特征名称": m.get("特征名称"),
+                "目标表名": m.get("目标表名"),
+                "源字段": m.get("源字段"),
+                "映射版本": m.get("映射版本"),
+                "转换凭证": m.get("转换凭证"),
+            }
+            for m in published
+        ]
+        source["字段清单"] = ",".join(str(m["源字段"]) for m in available)
+        source["可用特征"] = ",".join(str(m["目录编码"]) for m in available)
+        return {"ok": True, "source_id": source_id, "available_features": available,
+                "message": f"特征源 {source_id} 已登记 {len(available)} 项可用特征"}
+
+    def publish_mapping_revision(self, source_id: int, catalog_code: str,
+                                 new_table: str) -> dict[str, Any]:
+        """特征源发布不同口径的新映射：把同名字段切到另一张表，生成新映射版本。"""
+        source = store.find(self.MODULE, source_id)
+        if source is None:
+            return {"ok": False, "message": f"特征源 {source_id} 不存在"}
+        from app.services import service_for  # 延迟导入，避免服务注册表循环依赖
+
+        mapping_svc = service_for("source_mapping")
+        if mapping_svc is None or not hasattr(mapping_svc, "publish_revision"):
+            return {"ok": False, "message": "来源映射清单未就绪"}
+        return mapping_svc.publish_revision(catalog_code, new_table)

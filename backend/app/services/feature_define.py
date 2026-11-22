@@ -108,3 +108,67 @@ class FeatureDefineService(BaseModuleService):
                 "version": r.get("特征版本"),
             })
         return catalog
+
+    # 导入目录文件每行必须携带的解析键：目录字段 + 来源字段
+    IMPORT_REQUIRED_KEYS = [
+        "feature_code", "feature_name", "feature_type", "compute_logic",
+        "data_source", "version", "source_table", "source_field",
+        "column_type", "unit",
+    ]
+
+    def import_feature_catalog(self, catalog_rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """导入特征字段目录文件：解析目录与来源字段，逐行与当前特征源对账。
+
+        全部行通过校验才落库；任一行失败则整体拒绝，不写特征定义、不写来源映射，
+        已经受理的计算引用保持不变。
+        """
+        from app.services import service_for  # 延迟导入，避免服务注册表循环依赖
+
+        mapping_svc = service_for("source_mapping")
+        if mapping_svc is None or not hasattr(mapping_svc, "reconcile_catalog_row"):
+            return {"ok": False, "errors": ["来源映射清单未就绪"], "message": "来源映射清单未就绪"}
+        errors: list[str] = []
+        enriched: list[dict[str, Any]] = []
+        for idx, row in enumerate(catalog_rows, start=1):
+            missing = [key for key in self.IMPORT_REQUIRED_KEYS if not str(row.get(key) or "").strip()]
+            if missing:
+                errors.append(f"第{idx}行缺少字段：{'、'.join(missing)}")
+                continue
+            ok_row, problem = mapping_svc.reconcile_catalog_row(row)
+            if problem is not None:
+                errors.append(f"第{idx}行（{row.get('feature_code')}）：{problem}")
+            else:
+                enriched.append(ok_row)
+        if errors:
+            return {"ok": False, "errors": errors, "message": "；".join(errors)}
+        define_rows = store.rows(self.MODULE)
+        next_id = max((int(r.get("id", 0)) for r in define_rows), default=0)
+        imported = []
+        for item in enriched:
+            next_id += 1
+            define_rows.append({
+                "id": next_id,
+                "status": "草稿",
+                "pending": True,
+                "abnormal": False,
+                "特征编号": item["catalog_code"],
+                "特征名称": item["feature_name"],
+                "特征类型": item["feature_type"],
+                "计算逻辑": item["compute_logic"],
+                "数据来源": item["data_source"],
+                "缺失填充": "none",
+                "取值范围": "[]",
+                "特征版本": item["catalog_version"],
+            })
+            imported.append({"define_id": next_id, "目录编码": item["catalog_code"]})
+        mappings = mapping_svc.register_imported_mappings(enriched)
+        return {
+            "ok": True,
+            "imported": imported,
+            "mappings": [
+                {"id": m["id"], "映射编号": m["映射编号"], "目录编码": m["目录编码"],
+                 "映射版本": m["映射版本"], "转换凭证": m["转换凭证"]}
+                for m in mappings
+            ],
+            "message": f"已导入 {len(imported)} 条目录并生成 {len(mappings)} 条来源映射（待核定）",
+        }
